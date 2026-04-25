@@ -1,0 +1,1723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>ProCam - Full Control Camera</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ===== VIEWFINDER ===== */
+        #viewfinder-container {
+            flex: 1;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #111;
+            overflow: hidden;
+        }
+
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        #video.portrait-crop {
+            object-fit: cover;
+            width: 100%;
+            height: 100%;
+        }
+
+        #video.landscape-crop {
+            object-fit: cover;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Grid Overlay */
+        .grid-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+            display: none;
+        }
+
+        .grid-overlay.active {
+            display: block;
+        }
+
+        .grid-line {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .grid-line.h1 { top: 33.33%; left: 0; width: 100%; height: 1px; }
+        .grid-line.h2 { top: 66.66%; left: 0; width: 100%; height: 1px; }
+        .grid-line.v1 { left: 33.33%; top: 0; width: 1px; height: 100%; }
+        .grid-line.v2 { left: 66.66%; top: 0; width: 1px; height: 100%; }
+
+        /* Focus Reticle */
+        #focus-reticle {
+            position: absolute;
+            width: 80px;
+            height: 80px;
+            border: 2px solid #FFD700;
+            border-radius: 50%;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 6;
+            transform: translate(-50%, -50%);
+        }
+
+        #focus-reticle.active {
+            opacity: 1;
+            animation: focusPulse 0.5s ease-out;
+        }
+
+        @keyframes focusPulse {
+            0% { transform: translate(-50%, -50%) scale(1.5); }
+            100% { transform: translate(-50%, -50%) scale(1); }
+        }
+
+        /* Level Indicator */
+        #level-indicator {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 40px;
+            height: 40px;
+            border: 2px solid rgba(255,255,255,0.5);
+            border-radius: 50%;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #level-dot {
+            width: 8px;
+            height: 8px;
+            background: #0f0;
+            border-radius: 50%;
+            transition: transform 0.1s;
+        }
+
+        /* Recording Timer */
+        #rec-timer {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.6);
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 16px;
+            font-weight: 600;
+            z-index: 10;
+            display: none;
+            align-items: center;
+            gap: 8px;
+        }
+
+        #rec-timer.active {
+            display: flex;
+        }
+
+        .rec-dot {
+            width: 10px;
+            height: 10px;
+            background: #ff0000;
+            border-radius: 50%;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* Zoom Indicator */
+        #zoom-display {
+            position: absolute;
+            top: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.5);
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 14px;
+            z-index: 10;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        #zoom-display.show {
+            opacity: 1;
+        }
+
+        /* ===== TOP BAR ===== */
+        #top-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
+            z-index: 20;
+        }
+
+        .top-btn {
+            background: rgba(255,255,255,0.15);
+            border: none;
+            color: #fff;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            transition: all 0.2s;
+            font-size: 16px;
+        }
+
+        .top-btn:hover, .top-btn.active {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .top-btn svg {
+            width: 20px;
+            height: 20px;
+            fill: currentColor;
+        }
+
+        #flash-modes {
+            position: absolute;
+            top: 55px;
+            left: 16px;
+            background: rgba(0,0,0,0.8);
+            border-radius: 12px;
+            padding: 8px;
+            display: none;
+            flex-direction: column;
+            gap: 4px;
+            z-index: 30;
+        }
+
+        #flash-modes.show {
+            display: flex;
+        }
+
+        .flash-option {
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .flash-option:hover, .flash-option.active {
+            background: rgba(255,255,255,0.2);
+        }
+
+        /* ===== BOTTOM CONTROLS ===== */
+        #bottom-controls {
+            background: rgba(0,0,0,0.85);
+            backdrop-filter: blur(20px);
+            padding: 16px 20px 32px;
+            z-index: 20;
+        }
+
+        /* Mode Selector */
+        #mode-selector {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            margin-bottom: 20px;
+        }
+
+        .mode-btn {
+            background: none;
+            border: none;
+            color: rgba(255,255,255,0.6);
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            padding: 4px 8px;
+            position: relative;
+            transition: color 0.2s;
+        }
+
+        .mode-btn.active {
+            color: #FFD700;
+        }
+
+        .mode-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: -4px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 4px;
+            height: 4px;
+            background: #FFD700;
+            border-radius: 50%;
+        }
+
+        /* Main Controls Row */
+        #main-controls {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 8px;
+        }
+
+        /* Gallery Thumbnail */
+        #gallery-thumb {
+            width: 48px;
+            height: 48px;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 2px solid rgba(255,255,255,0.3);
+            cursor: pointer;
+            background: #222;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #gallery-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        #gallery-thumb .no-photo {
+            font-size: 20px;
+            opacity: 0.5;
+        }
+
+        /* Shutter Button */
+        #shutter-container {
+            position: relative;
+        }
+
+        #shutter-btn {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            border: 4px solid #fff;
+            background: transparent;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.15s;
+        }
+
+        #shutter-btn::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 56px;
+            height: 56px;
+            background: #fff;
+            border-radius: 50%;
+            transition: all 0.15s;
+        }
+
+        #shutter-btn:active::after {
+            width: 48px;
+            height: 48px;
+        }
+
+        #shutter-btn.recording {
+            border-color: #ff0000;
+        }
+
+        #shutter-btn.recording::after {
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+            background: #ff0000;
+        }
+
+        /* Switch Camera */
+        #switch-btn {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.15);
+            border: none;
+            color: #fff;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(10px);
+            transition: all 0.2s;
+        }
+
+        #switch-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        #switch-btn svg {
+            width: 24px;
+            height: 24px;
+            fill: currentColor;
+        }
+
+        /* ===== SETTINGS PANEL ===== */
+        #settings-panel {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(20, 20, 20, 0.98);
+            backdrop-filter: blur(30px);
+            border-radius: 24px 24px 0 0;
+            padding: 24px 20px 40px;
+            z-index: 100;
+            transform: translateY(100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+
+        #settings-panel.open {
+            transform: translateY(0);
+        }
+
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .settings-header h2 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .close-settings {
+            background: rgba(255,255,255,0.1);
+            border: none;
+            color: #fff;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 18px;
+        }
+
+        .setting-group {
+            margin-bottom: 24px;
+        }
+
+        .setting-label {
+            font-size: 13px;
+            color: rgba(255,255,255,0.5);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+        }
+
+        /* Aspect Ratio Buttons */
+        .ratio-options {
+            display: flex;
+            gap: 12px;
+        }
+
+        .ratio-btn {
+            flex: 1;
+            padding: 12px;
+            background: rgba(255,255,255,0.08);
+            border: 2px solid transparent;
+            border-radius: 12px;
+            color: #fff;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        .ratio-btn.active {
+            border-color: #FFD700;
+            background: rgba(255, 215, 0, 0.15);
+        }
+
+        .ratio-btn .ratio-icon {
+            width: 32px;
+            height: 24px;
+            border: 2px solid currentColor;
+            margin: 0 auto 6px;
+            border-radius: 3px;
+        }
+
+        .ratio-btn .ratio-icon.ratio-43 { width: 28px; height: 22px; }
+        .ratio-btn .ratio-icon.ratio-169 { width: 36px; height: 20px; }
+        .ratio-btn .ratio-icon.ratio-11 { width: 24px; height: 24px; }
+        .ratio-btn .ratio-icon.ratio-916 { width: 16px; height: 28px; }
+
+        .ratio-btn span {
+            font-size: 12px;
+            display: block;
+        }
+
+        /* Resolution Options */
+        .res-options {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .res-btn {
+            padding: 10px 16px;
+            background: rgba(255,255,255,0.08);
+            border: 2px solid transparent;
+            border-radius: 10px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .res-btn.active {
+            border-color: #FFD700;
+            background: rgba(255, 215, 0, 0.15);
+        }
+
+        /* Slider Controls */
+        .slider-control {
+            margin-bottom: 20px;
+        }
+
+        .slider-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .slider-track {
+            width: 100%;
+            height: 40px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 20px;
+            position: relative;
+            cursor: pointer;
+            touch-action: none;
+        }
+
+        .slider-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #FFD700, #FFA500);
+            border-radius: 20px;
+            width: 50%;
+            position: relative;
+        }
+
+        .slider-thumb {
+            position: absolute;
+            right: -12px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 24px;
+            height: 24px;
+            background: #fff;
+            border-radius: 50%;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        /* Toggle Switches */
+        .toggle-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+
+        .toggle-row:last-child {
+            border-bottom: none;
+        }
+
+        .toggle-switch {
+            width: 50px;
+            height: 28px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 14px;
+            position: relative;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .toggle-switch.active {
+            background: #34C759;
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 24px;
+            height: 24px;
+            background: #fff;
+            border-radius: 50%;
+            transition: transform 0.2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+
+        .toggle-switch.active::after {
+            transform: translateX(22px);
+        }
+
+        /* ===== GALLERY OVERLAY ===== */
+        #gallery-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.95);
+            z-index: 200;
+            display: none;
+            flex-direction: column;
+        }
+
+        #gallery-overlay.active {
+            display: flex;
+        }
+
+        .gallery-header {
+            padding: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0,0,0,0.5);
+        }
+
+        .gallery-header h2 {
+            font-size: 18px;
+        }
+
+        .gallery-close {
+            background: rgba(255,255,255,0.15);
+            border: none;
+            color: #fff;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 20px;
+        }
+
+        #gallery-grid {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+
+        .gallery-item {
+            aspect-ratio: 1;
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .gallery-item img, .gallery-item video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .gallery-item .video-badge {
+            position: absolute;
+            bottom: 4px;
+            right: 4px;
+            background: rgba(0,0,0,0.7);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+        }
+
+        /* Preview Modal */
+        #preview-modal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #000;
+            z-index: 300;
+            display: none;
+            flex-direction: column;
+        }
+
+        #preview-modal.active {
+            display: flex;
+        }
+
+        #preview-content {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        #preview-content img, #preview-content video {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        .preview-actions {
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+        }
+
+        .preview-btn {
+            background: rgba(255,255,255,0.15);
+            border: none;
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 24px;
+            cursor: pointer;
+            font-size: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .preview-btn.delete {
+            background: rgba(255, 50, 50, 0.3);
+        }
+
+        /* ===== TOAST ===== */
+        #toast {
+            position: absolute;
+            bottom: 140px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: rgba(0,0,0,0.8);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            z-index: 500;
+            opacity: 0;
+            transition: all 0.3s;
+            pointer-events: none;
+        }
+
+        #toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* ===== LANDSCAPE LAYOUT ===== */
+        @media (orientation: landscape) {
+            body {
+                flex-direction: row;
+            }
+
+            #viewfinder-container {
+                flex: 1;
+                height: 100vh;
+            }
+
+            #bottom-controls {
+                width: 120px;
+                height: 100vh;
+                padding: 20px 12px;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+            }
+
+            #mode-selector {
+                flex-direction: column;
+                gap: 16px;
+                margin-bottom: 0;
+            }
+
+            #main-controls {
+                flex-direction: column;
+                gap: 20px;
+                padding: 0;
+            }
+
+            #shutter-btn {
+                width: 64px;
+                height: 64px;
+            }
+
+            #shutter-btn::after {
+                width: 48px;
+                height: 48px;
+            }
+
+            #settings-panel {
+                left: auto;
+                width: 320px;
+                right: 120px;
+                border-radius: 24px 0 0 24px;
+                transform: translateX(100%);
+            }
+
+            #settings-panel.open {
+                transform: translateX(0);
+            }
+        }
+
+        /* ===== ANIMATIONS ===== */
+        @keyframes shutterFlash {
+            0% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        .shutter-flash {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #fff;
+            z-index: 50;
+            pointer-events: none;
+            animation: shutterFlash 0.3s ease-out forwards;
+        }
+
+        /* Loading */
+        #loading {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #000;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(255,255,255,0.2);
+            border-top-color: #FFD700;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Loading Screen -->
+    <div id="loading">
+        <div class="spinner"></div>
+        <div style="color: rgba(255,255,255,0.6); font-size: 14px;">Initializing Camera...</div>
+    </div>
+
+    <!-- Viewfinder -->
+    <div id="viewfinder-container">
+        <video id="video" autoplay playsinline muted></video>
+        
+        <!-- Grid Overlay -->
+        <div class="grid-overlay" id="grid-overlay">
+            <div class="grid-line h1"></div>
+            <div class="grid-line h2"></div>
+            <div class="grid-line v1"></div>
+            <div class="grid-line v2"></div>
+        </div>
+
+        <!-- Focus Reticle -->
+        <div id="focus-reticle"></div>
+
+        <!-- Level Indicator -->
+        <div id="level-indicator">
+            <div id="level-dot"></div>
+        </div>
+
+        <!-- Recording Timer -->
+        <div id="rec-timer">
+            <div class="rec-dot"></div>
+            <span id="rec-time">00:00</span>
+        </div>
+
+        <!-- Zoom Display -->
+        <div id="zoom-display">1.0x</div>
+
+        <!-- Top Bar -->
+        <div id="top-bar">
+            <button class="top-btn" id="flash-btn" title="Flash">
+                <svg viewBox="0 0 24 24"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
+            </button>
+            <div id="flash-modes">
+                <div class="flash-option active" data-mode="off">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z" opacity="0.3"/></svg>
+                    Off
+                </div>
+                <div class="flash-option" data-mode="on">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
+                    On
+                </div>
+                <div class="flash-option" data-mode="auto">
+                    <span style="font-size:12px; font-weight:bold;">A</span>
+                    Auto
+                </div>
+            </div>
+
+            <button class="top-btn" id="grid-btn" title="Grid">
+                <svg viewBox="0 0 24 24"><path d="M3 3v18h18V3H3zm16 16H5V5h14v14zM7 7h4v4H7V7zm0 6h4v4H7v-4zm6-6h4v4h-4V7zm0 6h4v4h-4v-4z"/></svg>
+            </button>
+
+            <button class="top-btn" id="settings-btn" title="Settings">
+                <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L3.16 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Bottom Controls -->
+    <div id="bottom-controls">
+        <div id="mode-selector">
+            <button class="mode-btn active" data-mode="photo">Photo</button>
+            <button class="mode-btn" data-mode="video">Video</button>
+            <button class="mode-btn" data-mode="portrait">Portrait</button>
+            <button class="mode-btn" data-mode="night">Night</button>
+        </div>
+
+        <div id="main-controls">
+            <div id="gallery-thumb">
+                <span class="no-photo">📷</span>
+            </div>
+
+            <div id="shutter-container">
+                <button id="shutter-btn"></button>
+            </div>
+
+            <button id="switch-btn">
+                <svg viewBox="0 0 24 24"><path d="M12 6c3.79 0 7.17 2.13 8.82 5.5-.59.98-1.38 1.82-2.32 2.48l1.42 1.42C21.39 13.93 22.5 12 22.5 12s-3.58-7-10.5-7c-1.82 0-3.53.5-5.05 1.35l1.45 1.45C9.88 7.2 10.92 7 12 7zM3.5 12S7.08 5 14 5c1.82 0 3.53.5 5.05 1.35l-1.45 1.45C16.12 7.2 15.08 7 14 7c-3.79 0-7.17 2.13-8.82 5.5.59.98 1.38 1.82 2.32 2.48l-1.42 1.42C2.61 12.07 1.5 14 1.5 14zM16.17 13.76l-1.42-1.42c-.36.51-.8.96-1.3 1.33l1.42 1.42c.5-.37.94-.82 1.3-1.33zM7.83 11.24l1.42 1.42c.36-.51.8-.96 1.3-1.33l-1.42-1.42c-.5.37-.94.82-1.3 1.33zM12 17c-3.79 0-7.17-2.13-8.82-5.5.59-.98 1.38-1.82 2.32-2.48L4.08 7.6C2.61 10.07 1.5 12 1.5 12s3.58 7 10.5 7c1.82 0 3.53-.5 5.05-1.35l-1.45-1.45C15.12 16.8 14.08 17 12 17z"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Settings Panel -->
+    <div id="settings-panel">
+        <div class="settings-header">
+            <h2>Camera Settings</h2>
+            <button class="close-settings" id="close-settings">×</button>
+        </div>
+
+        <div class="setting-group">
+            <div class="setting-label">Aspect Ratio</div>
+            <div class="ratio-options">
+                <button class="ratio-btn active" data-ratio="16:9">
+                    <div class="ratio-icon ratio-169"></div>
+                    <span>16:9</span>
+                </button>
+                <button class="ratio-btn" data-ratio="4:3">
+                    <div class="ratio-icon ratio-43"></div>
+                    <span>4:3</span>
+                </button>
+                <button class="ratio-btn" data-ratio="1:1">
+                    <div class="ratio-icon ratio-11"></div>
+                    <span>1:1</span>
+                </button>
+                <button class="ratio-btn" data-ratio="9:16">
+                    <div class="ratio-icon ratio-916"></div>
+                    <span>9:16</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="setting-group">
+            <div class="setting-label">Resolution</div>
+            <div class="res-options">
+                <button class="res-btn active" data-res="1080p">1080p</button>
+                <button class="res-btn" data-res="720p">720p</button>
+                <button class="res-btn" data-res="480p">480p</button>
+            </div>
+        </div>
+
+        <div class="setting-group">
+            <div class="setting-label">Exposure</div>
+            <div class="slider-control">
+                <div class="slider-header">
+                    <span>Dark</span>
+                    <span id="exposure-val">0</span>
+                    <span>Bright</span>
+                </div>
+                <div class="slider-track" id="exposure-slider">
+                    <div class="slider-fill" style="width: 50%">
+                        <div class="slider-thumb"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="setting-group">
+            <div class="setting-label">Zoom</div>
+            <div class="slider-control">
+                <div class="slider-header">
+                    <span>0.5x</span>
+                    <span id="zoom-val">1.0x</span>
+                    <span>3.0x</span>
+                </div>
+                <div class="slider-track" id="zoom-slider">
+                    <div class="slider-fill" style="width: 25%">
+                        <div class="slider-thumb"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="setting-group">
+            <div class="setting-label">Toggles</div>
+            <div class="toggle-row">
+                <span>Grid Lines</span>
+                <div class="toggle-switch" id="toggle-grid"></div>
+            </div>
+            <div class="toggle-row">
+                <span>Level Indicator</span>
+                <div class="toggle-switch active" id="toggle-level"></div>
+            </div>
+            <div class="toggle-row">
+                <span>Sound Shutter</span>
+                <div class="toggle-switch active" id="toggle-sound"></div>
+            </div>
+            <div class="toggle-row">
+                <span>Save to Gallery</span>
+                <div class="toggle-switch active" id="toggle-save"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gallery Overlay -->
+    <div id="gallery-overlay">
+        <div class="gallery-header">
+            <h2>Gallery</h2>
+            <button class="gallery-close" id="gallery-close">×</button>
+        </div>
+        <div id="gallery-grid"></div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div id="preview-modal">
+        <div class="gallery-header">
+            <h2>Preview</h2>
+            <button class="gallery-close" id="preview-close">×</button>
+        </div>
+        <div id="preview-content"></div>
+        <div class="preview-actions">
+            <button class="preview-btn delete" id="preview-delete">🗑 Delete</button>
+            <button class="preview-btn" id="preview-download">⬇ Download</button>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast"></div>
+
+    <script>
+        // ===== STATE =====
+        const state = {
+            stream: null,
+            mediaRecorder: null,
+            recordedChunks: [],
+            isRecording: false,
+            currentCamera: 'environment',
+            mode: 'photo',
+            flashMode: 'off',
+            aspectRatio: '16:9',
+            resolution: '1080p',
+            exposure: 0,
+            zoom: 1.0,
+            grid: false,
+            level: true,
+            sound: true,
+            saveToGallery: true,
+            gallery: [],
+            timerInterval: null,
+            startTime: null,
+            trackCapabilities: null
+        };
+
+        // ===== DOM ELEMENTS =====
+        const video = document.getElementById('video');
+        const shutterBtn = document.getElementById('shutter-btn');
+        const switchBtn = document.getElementById('switch-btn');
+        const recTimer = document.getElementById('rec-timer');
+        const recTime = document.getElementById('rec-time');
+        const zoomDisplay = document.getElementById('zoom-display');
+        const galleryThumb = document.getElementById('gallery-thumb');
+        const gridOverlay = document.getElementById('grid-overlay');
+        const focusReticle = document.getElementById('focus-reticle');
+        const levelDot = document.getElementById('level-dot');
+        const loading = document.getElementById('loading');
+        const toast = document.getElementById('toast');
+
+        // ===== INITIALIZATION =====
+        async function initCamera() {
+            try {
+                const constraints = {
+                    video: {
+                        facingMode: state.currentCamera,
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    },
+                    audio: true
+                };
+
+                state.stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = state.stream;
+                
+                await video.play();
+                
+                const track = state.stream.getVideoTracks()[0];
+                state.trackCapabilities = track.getCapabilities();
+                
+                applySettings();
+                loading.style.display = 'none';
+                showToast('Camera ready');
+            } catch (err) {
+                console.error('Camera error:', err);
+                loading.innerHTML = `<div style="color:#ff4444; text-align:center; padding:20px;">
+                    <div style="font-size:48px; margin-bottom:16px;">📷</div>
+                    <div style="font-size:16px; margin-bottom:8px;">Camera Access Required</div>
+                    <div style="font-size:13px; color:rgba(255,255,255,0.5);">Please allow camera access in your browser settings</div>
+                </div>`;
+            }
+        }
+
+        // ===== SETTINGS APPLICATION =====
+        function applySettings() {
+            const track = state.stream?.getVideoTracks()[0];
+            if (!track) return;
+
+            const settings = {};
+
+            // Resolution
+            const resMap = { '1080p': { width: 1920, height: 1080 }, '720p': { width: 1280, height: 720 }, '480p': { width: 640, height: 480 } };
+            const targetRes = resMap[state.resolution];
+            
+            // Aspect ratio handling
+            const ratioMap = {
+                '16:9': { width: 1920, height: 1080 },
+                '4:3': { width: 1440, height: 1080 },
+                '1:1': { width: 1080, height: 1080 },
+                '9:16': { width: 1080, height: 1920 }
+            };
+            const targetRatio = ratioMap[state.aspectRatio];
+
+            // Apply constraints
+            const constraints = {};
+            if (state.trackCapabilities?.zoom) {
+                constraints.zoom = state.zoom;
+            }
+            if (state.trackCapabilities?.exposureCompensation) {
+                constraints.exposureCompensation = state.exposure;
+            }
+            if (state.trackCapabilities?.torch && state.flashMode === 'on') {
+                constraints.torch = true;
+            }
+
+            if (Object.keys(constraints).length > 0) {
+                track.applyConstraints({ advanced: [constraints] }).catch(() => {});
+            }
+
+            // Update video style for aspect ratio
+            updateVideoStyle();
+        }
+
+        function updateVideoStyle() {
+            video.style.objectFit = 'cover';
+            
+            const container = document.getElementById('viewfinder-container');
+            const containerRatio = container.clientWidth / container.clientHeight;
+            
+            const ratioMap = {
+                '16:9': 16/9,
+                '4:3': 4/3,
+                '1:1': 1,
+                '9:16': 9/16
+            };
+            
+            const targetRatio = ratioMap[state.aspectRatio];
+            
+            // For portrait mode on the sensor, we might need to rotate
+            if (state.aspectRatio === '9:16') {
+                video.style.width = '100%';
+                video.style.height = '100%';
+            } else {
+                video.style.width = '100%';
+                video.style.height = '100%';
+            }
+        }
+
+        // ===== CAPTURE =====
+        async function takePhoto() {
+            if (state.sound) {
+                playShutterSound();
+            }
+
+            // Flash effect
+            const flash = document.createElement('div');
+            flash.className = 'shutter-flash';
+            document.getElementById('viewfinder-container').appendChild(flash);
+            setTimeout(() => flash.remove(), 300);
+
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Calculate dimensions based on aspect ratio
+            const ratioMap = {
+                '16:9': { w: 1920, h: 1080 },
+                '4:3': { w: 1440, h: 1080 },
+                '1:1': { w: 1080, h: 1080 },
+                '9:16': { w: 1080, h: 1920 }
+            };
+            
+            const dims = ratioMap[state.aspectRatio];
+            canvas.width = dims.w;
+            canvas.height = dims.h;
+
+            // Calculate crop for aspect ratio
+            const videoRatio = video.videoWidth / video.videoHeight;
+            const targetRatio = dims.w / dims.h;
+            
+            let sx, sy, sw, sh;
+            
+            if (videoRatio > targetRatio) {
+                sh = video.videoHeight;
+                sw = sh * targetRatio;
+                sx = (video.videoWidth - sw) / 2;
+                sy = 0;
+            } else {
+                sw = video.videoWidth;
+                sh = sw / targetRatio;
+                sx = 0;
+                sy = (video.videoHeight - sh) / 2;
+            }
+
+            // Handle mirroring for front camera
+            if (state.currentCamera === 'user') {
+                ctx.translate(canvas.width, 0);
+                ctx.scale(-1, 1);
+            }
+
+            ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+
+            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+            const url = URL.createObjectURL(blob);
+            
+            const photo = {
+                id: Date.now(),
+                type: 'photo',
+                url: url,
+                blob: blob,
+                timestamp: new Date().toLocaleString()
+            };
+
+            state.gallery.unshift(photo);
+            updateGalleryThumb();
+            showToast('Photo saved');
+
+            // Auto download
+            if (state.saveToGallery) {
+                downloadFile(url, `photo_${Date.now()}.jpg`);
+            }
+        }
+
+        // ===== VIDEO RECORDING =====
+        function startRecording() {
+            state.recordedChunks = [];
+            const options = { mimeType: 'video/webm;codecs=vp9,opus' };
+            
+            try {
+                state.mediaRecorder = new MediaRecorder(state.stream, options);
+            } catch {
+                state.mediaRecorder = new MediaRecorder(state.stream);
+            }
+
+            state.mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) state.recordedChunks.push(e.data);
+            };
+
+            state.mediaRecorder.onstop = () => {
+                const blob = new Blob(state.recordedChunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                
+                const videoItem = {
+                    id: Date.now(),
+                    type: 'video',
+                    url: url,
+                    blob: blob,
+                    timestamp: new Date().toLocaleString()
+                };
+
+                state.gallery.unshift(videoItem);
+                updateGalleryThumb();
+                
+                if (state.saveToGallery) {
+                    downloadFile(url, `video_${Date.now()}.webm`);
+                }
+            };
+
+            state.mediaRecorder.start();
+            state.isRecording = true;
+            state.startTime = Date.now();
+            
+            shutterBtn.classList.add('recording');
+            recTimer.classList.add('active');
+            
+            state.timerInterval = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+                const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+                const secs = String(elapsed % 60).padStart(2, '0');
+                recTime.textContent = `${mins}:${secs}`;
+            }, 1000);
+
+            showToast('Recording started');
+        }
+
+        function stopRecording() {
+            if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
+                state.mediaRecorder.stop();
+            }
+            
+            state.isRecording = false;
+            clearInterval(state.timerInterval);
+            
+            shutterBtn.classList.remove('recording');
+            recTimer.classList.remove('active');
+            recTime.textContent = '00:00';
+            
+            showToast('Video saved');
+        }
+
+        // ===== GALLERY =====
+        function updateGalleryThumb() {
+            if (state.gallery.length === 0) {
+                galleryThumb.innerHTML = '<span class="no-photo">📷</span>';
+                return;
+            }
+            
+            const latest = state.gallery[0];
+            if (latest.type === 'photo') {
+                galleryThumb.innerHTML = `<img src="${latest.url}" alt="latest">`;
+            } else {
+                galleryThumb.innerHTML = `<div style="width:100%;height:100%;background:#333;display:flex;align-items:center;justify-content:center;font-size:20px;">🎬</div>`;
+            }
+        }
+
+        function openGallery() {
+            const grid = document.getElementById('gallery-grid');
+            grid.innerHTML = '';
+            
+            state.gallery.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'gallery-item';
+                
+                if (item.type === 'photo') {
+                    div.innerHTML = `<img src="${item.url}" alt="photo">`;
+                } else {
+                    div.innerHTML = `
+                        <video src="${item.url}"></video>
+                        <div class="video-badge">VIDEO</div>
+                    `;
+                }
+                
+                div.onclick = () => openPreview(item);
+                grid.appendChild(div);
+            });
+            
+            document.getElementById('gallery-overlay').classList.add('active');
+        }
+
+        function openPreview(item) {
+            const content = document.getElementById('preview-content');
+            content.innerHTML = '';
+            
+            if (item.type === 'photo') {
+                const img = document.createElement('img');
+                img.src = item.url;
+                content.appendChild(img);
+            } else {
+                const vid = document.createElement('video');
+                vid.src = item.url;
+                vid.controls = true;
+                vid.autoplay = true;
+                content.appendChild(vid);
+            }
+            
+            document.getElementById('preview-modal').classList.add('active');
+            
+            document.getElementById('preview-delete').onclick = () => {
+                state.gallery = state.gallery.filter(g => g.id !== item.id);
+                updateGalleryThumb();
+                document.getElementById('preview-modal').classList.remove('active');
+                openGallery();
+                showToast('Deleted');
+            };
+            
+            document.getElementById('preview-download').onclick = () => {
+                const ext = item.type === 'photo' ? 'jpg' : 'webm';
+                downloadFile(item.url, `capture_${item.id}.${ext}`);
+            };
+        }
+
+        function downloadFile(url, filename) {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+        }
+
+        // ===== UTILITIES =====
+        function showToast(msg) {
+            toast.textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2000);
+        }
+
+        function playShutterSound() {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            
+            osc.frequency.setValueAtTime(800, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.1);
+            
+            gain.gain.setValueAtTime(0.3, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+            
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.1);
+        }
+
+        // ===== EVENT LISTENERS =====
+        
+        // Shutter
+        shutterBtn.addEventListener('click', () => {
+            if (state.mode === 'video') {
+                if (state.isRecording) {
+                    stopRecording();
+                } else {
+                    startRecording();
+                }
+            } else {
+                takePhoto();
+            }
+        });
+
+        // Switch Camera
+        switchBtn.addEventListener('click', async () => {
+            state.currentCamera = state.currentCamera === 'environment' ? 'user' : 'environment';
+            if (state.stream) {
+                state.stream.getTracks().forEach(t => t.stop());
+            }
+            await initCamera();
+            showToast(state.currentCamera === 'environment' ? 'Rear camera' : 'Front camera');
+        });
+
+        // Mode Selection
+        document.querySelectorAll('.mode-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                state.mode = btn.dataset.mode;
+                showToast(`${btn.textContent} mode`);
+            });
+        });
+
+        // Flash
+        const flashBtn = document.getElementById('flash-btn');
+        const flashModes = document.getElementById('flash-modes');
+        
+        flashBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            flashModes.classList.toggle('show');
+        });
+
+        document.querySelectorAll('.flash-option').forEach(opt => {
+            opt.addEventListener('click', () => {
+                document.querySelectorAll('.flash-option').forEach(o => o.classList.remove('active'));
+                opt.classList.add('active');
+                state.flashMode = opt.dataset.mode;
+                flashModes.classList.remove('show');
+                
+                // Update flash icon
+                const svg = flashBtn.querySelector('svg path');
+                if (state.flashMode === 'off') {
+                    svg.setAttribute('opacity', '0.3');
+                } else {
+                    svg.removeAttribute('opacity');
+                }
+                
+                applySettings();
+                showToast(`Flash: ${state.flashMode}`);
+            });
+        });
+
+        // Grid
+        document.getElementById('grid-btn').addEventListener('click', () => {
+            state.grid = !state.grid;
+            gridOverlay.classList.toggle('active', state.grid);
+            document.getElementById('grid-btn').classList.toggle('active', state.grid);
+            document.getElementById('toggle-grid').classList.toggle('active', state.grid);
+            showToast(state.grid ? 'Grid on' : 'Grid off');
+        });
+
+        // Settings Panel
+        const settingsPanel = document.getElementById('settings-panel');
+        
+        document.getElementById('settings-btn').addEventListener('click', () => {
+            settingsPanel.classList.add('open');
+        });
+        
+        document.getElementById('close-settings').addEventListener('click', () => {
+            settingsPanel.classList.remove('open');
+        });
+
+        // Aspect Ratio
+        document.querySelectorAll('.ratio-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.ratio-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                state.aspectRatio = btn.dataset.ratio;
+                applySettings();
+                showToast(`Ratio: ${state.aspectRatio}`);
+            });
+        });
+
+        // Resolution
+        document.querySelectorAll('.res-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.res-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                state.resolution = btn.dataset.res;
+                applySettings();
+                showToast(`Resolution: ${state.resolution}`);
+            });
+        });
+
+        // Sliders
+        function setupSlider(trackId, fillId, valId, min, max, step, callback) {
+            const track = document.getElementById(trackId);
+            const fill = track.querySelector('.slider-fill');
+            const valDisplay = document.getElementById(valId);
+            let isDragging = false;
+
+            function update(e) {
+                const rect = track.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                let pct = (clientX - rect.left) / rect.width;
+                pct = Math.max(0, Math.min(1, pct));
+                
+                fill.style.width = `${pct * 100}%`;
+                
+                const value = min + pct * (max - min);
+                const stepped = Math.round(value / step) * step;
+                
+                if (valDisplay) valDisplay.textContent = callback(stepped);
+                return stepped;
+            }
+
+            track.addEventListener('mousedown', (e) => { isDragging = true; update(e); });
+            track.addEventListener('touchstart', (e) => { isDragging = true; update(e); });
+            
+            document.addEventListener('mousemove', (e) => { if (isDragging) update(e); });
+            document.addEventListener('touchmove', (e) => { if (isDragging) update(e); });
+            
+            document.addEventListener('mouseup', () => { isDragging = false; });
+            document.addEventListener('touchend', () => { isDragging = false; });
+        }
+
+        setupSlider('exposure-slider', null, 'exposure-val', -2, 2, 0.1, (v) => {
+            state.exposure = v;
+            applySettings();
+            return v > 0 ? `+${v}` : v;
+        });
+
+        setupSlider('zoom-slider', null, 'zoom-val', 0.5, 3.0, 0.1, (v) => {
+            state.zoom = v;
+            applySettings();
+            zoomDisplay.textContent = `${v.toFixed(1)}x`;
+            zoomDisplay.classList.add('show');
+            clearTimeout(window.zoomTimeout);
+            window.zoomTimeout = setTimeout(() => zoomDisplay.classList.remove('show'), 1500);
+            return `${v.toFixed(1)}x`;
+        });
+
+        // Toggles
+        document.querySelectorAll('.toggle-switch').forEach(toggle => {
+            toggle.addEventListener('click', () => {
+                toggle.classList.toggle('active');
+                const isActive = toggle.classList.contains('active');
+                
+                if (toggle.id === 'toggle-grid') {
+                    state.grid = isActive;
+                    gridOverlay.classList.toggle('active', isActive);
+                    document.getElementById('grid-btn').classList.toggle('active', isActive);
+                } else if (toggle.id === 'toggle-level') {
+                    state.level = isActive;
+                    document.getElementById('level-indicator').style.display = isActive ? 'flex' : 'none';
+                } else if (toggle.id === 'toggle-sound') {
+                    state.sound = isActive;
+                } else if (toggle.id === 'toggle-save') {
+                    state.saveToGallery = isActive;
+                }
+            });
+        });
+
+        // Gallery
+        galleryThumb.addEventListener('click', openGallery);
+        document.getElementById('gallery-close').addEventListener('click', () => {
+            document.getElementById('gallery-overlay').classList.remove('active');
+        });
+        document.getElementById('preview-close').addEventListener('click', () => {
+            document.getElementById('preview-modal').classList.remove('active');
+        });
+
+        // Tap to Focus
+        document.getElementById('viewfinder-container').addEventListener('click', (e) => {
+            if (e.target.closest('#top-bar') || e.target.closest('.grid-overlay')) return;
+            
+            const rect = video.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            focusReticle.style.left = x + 'px';
+            focusReticle.style.top = y + 'px';
+            focusReticle.classList.add('active');
+            
+            setTimeout(() => focusReticle.classList.remove('active'), 1000);
+            
+            // Try to set focus point if supported
+            const track = state.stream?.getVideoTracks()[0];
+            if (track && state.trackCapabilities?.focusMode) {
+                track.applyConstraints({
+                    advanced: [{ focusMode: 'manual' }]
+                }).catch(() => {});
+            }
+        });
+
+        // Pinch to Zoom
+        let initialPinchDistance = 0;
+        let initialZoom = 1;
+
+        document.getElementById('viewfinder-container').addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2) {
+                initialPinchDistance = Math.hypot(
+                    e.touches[0].pageX - e.touches[1].pageX,
+                    e.touches[0].pageY - e.touches[1].pageY
+                );
+                initialZoom = state.zoom;
+            }
+        });
+
+        document.getElementById('viewfinder-container').addEventListener('touchmove', (e) => {
+            if (e.touches.length === 2) {
+                e.preventDefault();
+                const distance = Math.hypot(
+                    e.touches[0].pageX - e.touches[1].pageX,
+                    e.touches[0].pageY - e.touches[1].pageY
+                );
+                const scale = distance / initialPinchDistance;
+                state.zoom = Math.max(0.5, Math.min(3.0, initialZoom * scale));
+                applySettings();
+                
+                zoomDisplay.textContent = `${state.zoom.toFixed(1)}x`;
+                zoomDisplay.classList.add('show');
+                clearTimeout(window.zoomTimeout);
+                window.zoomTimeout = setTimeout(() => zoomDisplay.classList.remove('show'), 1500);
+            }
+        });
+
+        // Device Orientation / Level
+        window.addEventListener('deviceorientation', (e) => {
+            if (!state.level) return;
+            
+            const beta = e.beta || 0;
+            const gamma = e.gamma || 0;
+            
+            const x = Math.max(-15, Math.min(15, gamma)) / 15 * 12;
+            const y = Math.max(-15, Math.min(15, beta)) / 15 * 12;
+            
+            levelDot.style.transform = `translate(${x}px, ${y}px)`;
+            
+            if (Math.abs(gamma) < 2 && Math.abs(beta) < 2) {
+                levelDot.style.background = '#0f0';
+            } else {
+                levelDot.style.background = '#ff9500';
+            }
+        });
+
+        // Close flash menu on outside click
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('#flash-btn') && !e.target.closest('#flash-modes')) {
+                flashModes.classList.remove('show');
+            }
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                shutterBtn.click();
+            }
+        });
+
+        // Start
+        initCamera();
+    </script>
+</body>
+</html>
